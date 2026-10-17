@@ -8,14 +8,12 @@ An interactive **classical mechanics virtual laboratory**. A Python physics core
 
 - [Features](#features)
 - [Experiments](#experiments)
-- [Architecture](#architecture)
 - [Project Structure](#project-structure)
 - [Tech Stack](#tech-stack)
 - [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
 - [API Reference](#api-reference)
 - [Numerical Methods](#numerical-methods)
-- [Physics Verification & Figures](#physics-verification--figures)
 
 ---
 
@@ -66,33 +64,29 @@ All parameters are clamped to safe ranges in [`engine_factory.py`](backend/app/e
 │       │   └── collision.py
 │       └── schemas/
 │           └── messages.py      # Pydantic StateFrame / ExperimentConfig
-├── frontend/
-│   └── src/
-│       ├── app/                 # Next.js App Router (layout, page, styles)
-│       └── components/
-│           ├── SimulationCanvas.jsx
-│           ├── TutorPanel.jsx
-│           ├── TutorContext.jsx
-│           ├── LabNotebook.jsx
-│           ├── MarkdownView.jsx
-│           └── simulation/
-│               ├── CanvasRenderer.jsx
-│               ├── Charts.jsx
-│               ├── Controls.jsx
-│               ├── constants.js
-│               ├── hooks.js
-│               ├── labGuides.js
-│               └── utils.js
-├── verify_physics.py            # Automated physics accuracy tests
-├── plot_physics.py              # Generates validation figures
-└── poster_figs/                 # Generated figures (PDF + SVG)
+└── frontend/
+    └── src/
+        ├── app/                 # Next.js App Router (layout, page, styles)
+        └── components/
+            ├── SimulationCanvas.jsx
+            ├── TutorPanel.jsx
+            ├── TutorContext.jsx
+            ├── LabNotebook.jsx
+            ├── MarkdownView.jsx
+            └── simulation/
+                ├── CanvasRenderer.jsx
+                ├── Charts.jsx
+                ├── Controls.jsx
+                ├── constants.js
+                ├── hooks.js
+                ├── labGuides.js
+                └── utils.js
 ```
 
 ## Tech Stack
 
 **Backend:** Python 3.12, FastAPI, Uvicorn, Pydantic, NumPy, Groq SDK, python-dotenv
 **Frontend:** Next.js 16, React 19, HTML Canvas, KaTeX, marked
-**Analysis:** SciPy, Matplotlib
 
 ## Getting Started
 
@@ -108,12 +102,10 @@ From the repository root:
 
 ```bash
 # Create and activate an environment (example with conda)
-conda create -p ./env python=3.12 -y
-conda activate ./env
+conda create -n physics-lab python=3.12 -y
+conda activate physics-lab
 
 pip install fastapi "uvicorn[standard]" pydantic numpy groq python-dotenv
-# Optional, for the verification and plotting scripts
-pip install scipy matplotlib
 
 python -m uvicorn backend.app.main:app --reload
 ```
@@ -132,7 +124,7 @@ Open `http://localhost:3000`.
 
 ## Environment Variables
 
-### Backend (`.env` in the project root)
+### Backend (`backend/.env`)
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
@@ -225,33 +217,3 @@ Response: `{ "feedback": "...", "score": null }`
 - **Runge–Kutta 4** (`RK4Engine`): fourth order. Used for ODE models (`ODEModel` subclasses) such as the simple and double pendulum.
 - **Adaptive substepping**: for stiff springs and fast double pendulums, the number of substeps per frame is picked from the system's natural frequency. This keeps every frame accurate.
 - **Collisions**: impulse-based resolution with a coefficient of restitution `e ∈ [0, 1]`, plus optional ground contact.
-
-## Physics Verification & Figures
-
-[`verify_physics.py`](verify_physics.py) checks the engines against analytical results. It tests:
-
-- the projectile range and trajectory,
-- the spring period and energy conservation,
-- the large-amplitude pendulum period (exact solution with an elliptic integral `K(k)`),
-- energy behavior of the double pendulum,
-- momentum conservation in collisions.
-
-```bash
-python verify_physics.py
-```
-
-[`plot_physics.py`](plot_physics.py) creates the validation figures in [`poster_figs/`](poster_figs):
-
-| Figure | Content |
-|---|---|
-| `01_proyectil_trayectoria` | Projectile trajectory |
-| `02_resorte_oscilacion` | Spring oscillation |
-| `03_pendulo_periodo` | Pendulum period vs. amplitude |
-| `04_pendulo_doble_caos_energia` | Double pendulum chaos & energy |
-| `05_colisiones` | Collisions |
-
-```bash
-python plot_physics.py
-```
-
-> **Note:** `plot_physics.py` has a hard-coded `ROOT` path at the top. Change it to match your local checkout.

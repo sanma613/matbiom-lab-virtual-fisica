@@ -1,66 +1,280 @@
-# Virtual Physics Lab
+# MatBiom Virtual Physics Lab
 
-Skeleton for a classical physics virtual lab with a modular physics core, FastAPI backend, and Canvas frontend.
+An interactive **classical mechanics virtual laboratory**. A Python physics core streams real-time simulation frames over WebSockets to a Next.js / Canvas frontend, which shows live animation, charts, guided lab worksheets, and an AI **Socratic tutor** (powered by Groq) that asks questions about the data instead of giving answers.
 
-## Project Layout
+---
 
-- backend/app/core: physics engine and utilities
-- backend/app/experiments: force models (projectile, spring, pendulum)
-- backend/app/schemas: JSON message schema definitions
-- backend/app/main.py: FastAPI app with WebSocket fixed-timestep stream
-- frontend: HTML/JS Canvas client
+## Table of Contents
 
-## Run (local)
+- [Features](#features)
+- [Experiments](#experiments)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [API Reference](#api-reference)
+- [Numerical Methods](#numerical-methods)
+- [Physics Verification & Figures](#physics-verification--figures)
 
-1. Backend (conda env already created)
+---
+
+## Features
+
+- **Real-time simulation**: the server steps the physics at a fixed `dt = 1/60 s` (up to 90 s per run) and streams each state frame over a WebSocket.
+- **Pause / resume**: the client sends commands over the same socket.
+- **Canvas rendering**: animated bodies, trajectories, springs, pendulum rods and collisions.
+- **Live charts**: position, velocity and energy (kinetic, potential, total) over time.
+- **Guided lab worksheets** (`labGuides.js`): each experiment has a structured guide with objectives, theory, procedure and questions.
+- **Lab notebook**: students record a hypothesis, observations, data rows and conclusions. They can then request an **AI review** of the notebook.
+- **Socratic AI tutor**: uses the current experiment state (position, velocity, energy trend, parameters) to ask short, data-grounded questions. It never solves the problem and never says "correct" or "incorrect". It replies in Spanish and writes math in LaTeX.
+- **Markdown + LaTeX rendering** with `marked` and `KaTeX`.
+
+## Experiments
+
+| Experiment | Key | Model | Integrator | Main parameters |
+|---|---|---|---|---|
+| Projectile motion (2D) | `projectile` | Gravity + linear drag | Velocity Verlet | `mass, x0, y0, vx0, vy0, gravity, drag_coeff` |
+| Mass–spring (Hooke's law) | `spring` | Elastic + damping force, optional ground bounce | Velocity Verlet (adaptive substeps) | `mass, x0, y0, vx0, vy0, k, damping, rest_length, ground_collision, restitution` |
+| Simple pendulum | `pendulum` | Nonlinear ODE with damping | RK4 | `mass, gravity, length, damping, angle0, vt0` |
+| Double pendulum (chaos) | `double_pendulum` | Coupled nonlinear ODEs | RK4 (adaptive substeps) | `mass1, mass2, length1, length2, gravity, damping, angle1, angle2, omega1, omega2` |
+| 2D collisions | `collision` | Two rigid discs, coefficient of restitution, optional ground | Custom two-body stepper | `mass_a/b, radius_a/b, ax0, ay0, avx0, avy0, bx0, by0, bvx0, bvy0, gravity, drag, restitution, ground_collision, ground_y` |
+
+All parameters are clamped to safe ranges in [`engine_factory.py`](backend/app/engine_factory.py).
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Frontend ["Frontend (Next.js + Canvas)"]
+        UI["Controls / Lab Guide"] --> SC["SimulationCanvas"]
+        SC --> CR["CanvasRenderer"]
+        SC --> CH["Charts"]
+        TP["TutorPanel"] --> TC["TutorContext"]
+        LN["LabNotebook"]
+    end
+
+    subgraph Backend ["Backend (FastAPI)"]
+        WS["/ws WebSocket"] --> EF["engine_factory"]
+        EF --> ENG["VerletEngine / RK4Engine / TwoBodyCollision"]
+        API["/api/tutor and /api/tutor/review"] --> GROQ["Groq LLM"]
+    end
+
+    SC <-- "state frames / pause, resume" --> WS
+    TC -- "state + energy + history" --> API
+    LN -- "notebook contents" --> API
+```
+
+## Project Structure
 
 ```
-conda activate /home/sanma613/Desktop/avanceProyecto/env
+.
+├── backend/
+│   └── app/
+│       ├── main.py              # FastAPI app, CORS, routes
+│       ├── ws.py                # WebSocket fixed-timestep streaming loop
+│       ├── config.py            # DT (1/60 s) and MAX_T (90 s)
+│       ├── engine_factory.py    # Builds an engine from query params
+│       ├── api/
+│       │   └── tutor.py         # Socratic tutor + notebook review (Groq)
+│       ├── core/
+│       │   ├── state.py         # State and Vec2 primitives
+│       │   ├── engines.py       # VerletEngine, ODEModel, RK4Engine
+│       │   └── forces/base.py   # ForceModel abstract base
+│       ├── experiments/
+│       │   ├── projectile.py
+│       │   ├── spring.py
+│       │   ├── pendulum.py
+│       │   ├── double_pendulum.py
+│       │   └── collision.py
+│       └── schemas/
+│           └── messages.py      # Pydantic StateFrame / ExperimentConfig
+├── frontend/
+│   └── src/
+│       ├── app/                 # Next.js App Router (layout, page, styles)
+│       └── components/
+│           ├── SimulationCanvas.jsx
+│           ├── TutorPanel.jsx
+│           ├── TutorContext.jsx
+│           ├── LabNotebook.jsx
+│           ├── MarkdownView.jsx
+│           └── simulation/
+│               ├── CanvasRenderer.jsx
+│               ├── Charts.jsx
+│               ├── Controls.jsx
+│               ├── constants.js
+│               ├── hooks.js
+│               ├── labGuides.js
+│               └── utils.js
+├── verify_physics.py            # Automated physics accuracy tests
+├── plot_physics.py              # Generates validation figures
+└── poster_figs/                 # Generated figures (PDF + SVG)
+```
+
+## Tech Stack
+
+**Backend:** Python 3.12, FastAPI, Uvicorn, Pydantic, NumPy, Groq SDK, python-dotenv
+**Frontend:** Next.js 16, React 19, HTML Canvas, KaTeX, marked
+**Analysis:** SciPy, Matplotlib
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.12+ (conda or venv)
+- Node.js 20+
+- A [Groq API key](https://console.groq.com/) (only needed for the tutor features)
+
+### 1. Backend
+
+From the repository root:
+
+```bash
+# Create and activate an environment (example with conda)
+conda create -p ./env python=3.12 -y
+conda activate ./env
+
+pip install fastapi "uvicorn[standard]" pydantic numpy groq python-dotenv
+# Optional, for the verification and plotting scripts
+pip install scipy matplotlib
+
 python -m uvicorn backend.app.main:app --reload
 ```
 
-2. Frontend (Next.js)
+The API runs at `http://localhost:8000`. Interactive docs are at `http://localhost:8000/docs`.
 
-```
+### 2. Frontend
+
+```bash
 cd frontend
+npm install
 npm run dev
 ```
 
-Optional: set a custom WebSocket URL for the frontend
+Open `http://localhost:3000`.
+
+## Environment Variables
+
+### Backend (`.env` in the project root)
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `GROQ_API_KEY` | For the tutor | — | Groq API key |
+| `GROQ_MODEL` | No | `openai/gpt-oss-20b` | Main LLM model |
+| `GROQ_FALLBACK_MODELS` | No | — | Comma-separated fallback models |
+
+### Frontend (`frontend/.env.local`)
+
+| Variable | Default |
+|---|---|
+| `NEXT_PUBLIC_WS_URL` | `ws://localhost:8000/ws` |
+| `NEXT_PUBLIC_TUTOR_URL` | `http://localhost:8000/api/tutor` |
+| `NEXT_PUBLIC_REVIEW_URL` | `http://localhost:8000/api/tutor/review` |
+
+## API Reference
+
+### WebSocket: `GET /ws?experiment=<key>&<params...>`
+
+Open a socket with the experiment key and its parameters as query strings, for example:
 
 ```
-export NEXT_PUBLIC_WS_URL="ws://localhost:8000/ws"
+ws://localhost:8000/ws?experiment=pendulum&length=2&angle0=30&damping=0.05
 ```
 
-## JSON Data Contract
-
-### State Frame (server -> client)
+**Server → client (state frame):**
 
 ```json
 {
   "type": "state",
-  "t": 0.0,
-  "experiment": "projectile",
-  "position": { "x": 0.0, "y": 0.0 },
-  "velocity": { "x": 0.0, "y": 0.0 },
-  "units": { "length": "m", "time": "s", "mass": "kg" }
+  "t": 0.0167,
+  "experiment": "pendulum",
+  "position": { "x": 0.75, "y": -1.30 },
+  "velocity": { "x": -0.12, "y": -0.07 },
+  "units": { "length": "m", "time": "s", "mass": "kg" },
+  "meta": {}
 }
 ```
 
-### Experiment Config (client -> server, future)
+The `collision` experiment sends a two-body frame (both discs) instead.
+
+**Client → server (commands):**
+
+```json
+{ "action": "pause" }
+{ "action": "resume" }
+```
+
+### `POST /api/tutor`
+
+Returns one Socratic question based on the live experiment state.
+
+```json
+{
+  "experiment": "projectile",
+  "state": { "position": {"x": 1, "y": 2}, "velocity": {"x": 3, "y": -1}, "mass": 1, "t": 0.8 },
+  "physics_params": { "gravity": 9.81 },
+  "energy": { "kinetic": 5.0, "potential": 19.6, "total": 24.6, "total_trend": 0.0 },
+  "is_paused": true,
+  "sim_time": 0.8,
+  "history": [{ "role": "tutor", "content": "..." }],
+  "student_reply": "..."
+}
+```
+
+Response: `{ "message": "..." }`
+
+### `POST /api/tutor/review`
+
+Gives AI feedback on the student's lab notebook.
 
 ```json
 {
   "experiment": "spring",
-  "params": {
-    "k": 12.0,
-    "damping": 0.3
-  }
+  "guide_title": "...",
+  "questions": ["..."],
+  "hypothesis": "...",
+  "observations": "...",
+  "conclusions": "...",
+  "data_rows": [{ "t": 0.5, "y": -1.2 }],
+  "physics_params": { "k": 12 }
 }
 ```
 
-## Notes
+Response: `{ "feedback": "...", "score": null }`
 
-- Physics integration uses Velocity Verlet with a decoupled force model.
-- WebSocket stream runs a fixed timestep with an accumulator and sends frames at 60 Hz.
-- The pendulum force model includes a soft constraint term for length preservation.
+## Numerical Methods
+
+- **Velocity Verlet** (`VerletEngine`): symplectic and second order. Used for force-based models (projectile, spring) because it keeps energy stable over long runs.
+- **Runge–Kutta 4** (`RK4Engine`): fourth order. Used for ODE models (`ODEModel` subclasses) such as the simple and double pendulum.
+- **Adaptive substepping**: for stiff springs and fast double pendulums, the number of substeps per frame is picked from the system's natural frequency. This keeps every frame accurate.
+- **Collisions**: impulse-based resolution with a coefficient of restitution `e ∈ [0, 1]`, plus optional ground contact.
+
+## Physics Verification & Figures
+
+[`verify_physics.py`](verify_physics.py) checks the engines against analytical results. It tests:
+
+- the projectile range and trajectory,
+- the spring period and energy conservation,
+- the large-amplitude pendulum period (exact solution with an elliptic integral `K(k)`),
+- energy behavior of the double pendulum,
+- momentum conservation in collisions.
+
+```bash
+python verify_physics.py
+```
+
+[`plot_physics.py`](plot_physics.py) creates the validation figures in [`poster_figs/`](poster_figs):
+
+| Figure | Content |
+|---|---|
+| `01_proyectil_trayectoria` | Projectile trajectory |
+| `02_resorte_oscilacion` | Spring oscillation |
+| `03_pendulo_periodo` | Pendulum period vs. amplitude |
+| `04_pendulo_doble_caos_energia` | Double pendulum chaos & energy |
+| `05_colisiones` | Collisions |
+
+```bash
+python plot_physics.py
+```
+
+> **Note:** `plot_physics.py` has a hard-coded `ROOT` path at the top. Change it to match your local checkout.

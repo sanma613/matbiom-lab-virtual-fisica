@@ -42,29 +42,6 @@ An interactive **classical mechanics virtual laboratory**. A Python physics core
 
 All parameters are clamped to safe ranges in [`engine_factory.py`](backend/app/engine_factory.py).
 
-## Architecture
-
-```mermaid
-flowchart LR
-    subgraph Frontend ["Frontend (Next.js + Canvas)"]
-        UI["Controls / Lab Guide"] --> SC["SimulationCanvas"]
-        SC --> CR["CanvasRenderer"]
-        SC --> CH["Charts"]
-        TP["TutorPanel"] --> TC["TutorContext"]
-        LN["LabNotebook"]
-    end
-
-    subgraph Backend ["Backend (FastAPI)"]
-        WS["/ws WebSocket"] --> EF["engine_factory"]
-        EF --> ENG["VerletEngine / RK4Engine / TwoBodyCollision"]
-        API["/api/tutor and /api/tutor/review"] --> GROQ["Groq LLM"]
-    end
-
-    SC <-- "state frames / pause, resume" --> WS
-    TC -- "state + energy + history" --> API
-    LN -- "notebook contents" --> API
-```
-
 ## Project Structure
 
 ```

@@ -6,7 +6,6 @@ env/
 
 # Generated scripts and outputs
 plot_physics.py
-verify_physics.py
 poster_figs/
 
 # Python cache and test artifacts
